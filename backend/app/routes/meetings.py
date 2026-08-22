@@ -19,8 +19,15 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from app.services.database_service import get_db
-from app.services.meeting_service import get_meeting_by_id, save_transcript
+from app.services.meeting_service import (
+    get_meeting_by_id,
+    get_latest_transcript,
+    get_project_id_for_meeting,
+    save_transcript,
+    save_intelligence,
+)
 from app.services.whisper_service import transcribe_audio
+from app.services.analyze_transcript_stub import analyze_transcript
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
@@ -146,4 +153,97 @@ async def upload_audio(
     return {
         "meeting_id": meeting_id,
         "transcript": transcript,
+    }
+
+
+@router.post("/{meeting_id}/process")
+def process_meeting(
+    meeting_id: str,
+    db=Depends(get_db),
+):
+    """
+    Retrieve the latest transcript for a meeting, run it through
+    analyze_transcript(), persist decisions/tasks/risks/unresolved
+    to Supabase, and return the structured intelligence.
+
+    Errors:
+      404 — meeting not found
+      409 — no transcript exists yet (upload audio first)
+      500 — analysis or database failure
+    """
+
+    # ── 1. Verify meeting exists ──────────────────────────────────────────────
+    try:
+        meeting = get_meeting_by_id(db, meeting_id)
+    except Exception as e:
+        logging.error(f"DB error looking up meeting {meeting_id}: {e}")
+        raise HTTPException(status_code=500, detail="Database error looking up meeting.")
+
+    if meeting is None:
+        raise HTTPException(status_code=404, detail=f"Meeting '{meeting_id}' not found.")
+
+    # ── 2. Retrieve latest transcript ─────────────────────────────────────────
+    try:
+        transcript = get_latest_transcript(db, meeting_id)
+    except Exception as e:
+        logging.error(f"DB error retrieving transcript for meeting {meeting_id}: {e}")
+        raise HTTPException(status_code=500, detail="Database error retrieving transcript.")
+
+    if transcript is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"No transcript found for meeting '{meeting_id}'. "
+                "Upload audio first via POST /meetings/{meeting_id}/audio."
+            ),
+        )
+
+    # ── 3. Run analyze_transcript() ───────────────────────────────────────────
+    try:
+        intelligence = analyze_transcript(transcript)
+    except Exception as e:
+        logging.error(f"analyze_transcript() failed for meeting {meeting_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Transcript analysis failed: {str(e)}",
+        )
+
+    # Basic structural validation of the returned intelligence
+    for key in ("decisions", "tasks", "risks", "unresolved"):
+        if key not in intelligence or not isinstance(intelligence[key], list):
+            logging.error(
+                f"analyze_transcript() returned invalid structure — missing or non-list key '{key}'"
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Transcript analysis returned an invalid response structure.",
+            )
+
+    # ── 4. Resolve project_id ─────────────────────────────────────────────────
+    project_id = meeting.get("project_id")
+    if not project_id:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Meeting '{meeting_id}' has no associated project_id.",
+        )
+
+    # ── 5. Persist to Supabase ────────────────────────────────────────────────
+    try:
+        save_intelligence(db, project_id, meeting_id, intelligence)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # ── 6. Return structured intelligence ────────────────────────────────────
+    logging.info(
+        f"Processed meeting {meeting_id}: "
+        f"{len(intelligence['decisions'])} decisions, "
+        f"{len(intelligence['tasks'])} tasks, "
+        f"{len(intelligence['risks'])} risks, "
+        f"{len(intelligence['unresolved'])} unresolved"
+    )
+    return {
+        "decisions":  intelligence["decisions"],
+        "tasks":      intelligence["tasks"],
+        "risks":      intelligence["risks"],
+        "unresolved": intelligence["unresolved"],
     }

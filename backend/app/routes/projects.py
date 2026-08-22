@@ -1,51 +1,61 @@
-from fastapi import APIRouter, HTTPException, Depends
+"""
+routes/projects.py
+------------------
+GET /projects
+    List all projects.
+
+GET /projects/{project_id}/state
+    Return full project state from Supabase:
+    { project, decisions, tasks, risks, unresolved, recent_activity }
+"""
+
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException
+
 from app.services.database_service import get_db
+from app.services.project_service import get_project_state
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
+
 @router.get("")
 def get_projects(db=Depends(get_db)):
+    """Return a list of all projects."""
     try:
-        response = db.table("projects").select("*").execute()
+        response = db.table("projects").select("*").order("created_at", desc=True).execute()
         return response.data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        logging.error(f"Failed to list projects: {e}")
+        raise HTTPException(status_code=500, detail="Database error listing projects.")
+
 
 @router.get("/{project_id}/state")
-def get_project_state(project_id: str, db=Depends(get_db)):
+def get_project_state_endpoint(project_id: str, db=Depends(get_db)):
+    """
+    Return the full state of a project.
+
+    Response:
+      {
+        "project":         { ...project row... },
+        "decisions":       [ ...decision rows... ],
+        "tasks":           [ ...task rows... ],
+        "risks":           [ ...risk rows... ],
+        "unresolved":      [ ...unresolved_issue rows... ],
+        "recent_activity": [ ...up to 20 activity items... ]
+      }
+
+    Errors:
+      404 -- project not found
+      500 -- Supabase query failure
+    """
     try:
-        # Fetch project details
-        proj_res = db.table("projects").select("*").eq("id", project_id).execute()
-        if not proj_res.data:
-            raise HTTPException(status_code=404, detail="Project not found")
-        project = proj_res.data[0]
-
-        # Fetch related tables
-        decisions_res = db.table("decisions").select("*").eq("project_id", project_id).execute()
-        tasks_res = db.table("tasks").select("*").eq("project_id", project_id).execute()
-        risks_res = db.table("risks").select("*").eq("project_id", project_id).execute()
-        unresolved_res = db.table("unresolved_issues").select("*").eq("project_id", project_id).execute()
-        meetings_res = db.table("meetings").select("*").eq("project_id", project_id).order("created_at", desc=True).execute()
-
-        # Map meetings to recent activity format
-        recent_activity = []
-        for meeting in meetings_res.data:
-            recent_activity.append({
-                "id": meeting["id"],
-                "type": "meeting",
-                "description": f"Meeting: {meeting['title']}",
-                "created_at": meeting.get("created_at")
-            })
-
-        return {
-            "project": project,
-            "decisions": decisions_res.data,
-            "tasks": tasks_res.data,
-            "risks": risks_res.data,
-            "unresolved": unresolved_res.data,
-            "recent_activity": recent_activity
-        }
-    except HTTPException:
-        raise
+        state = get_project_state(db, project_id)
+        return state
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        logging.error(f"Unexpected error in get_project_state for {project_id}: {e}")
+        raise HTTPException(status_code=500, detail="Unexpected server error.")

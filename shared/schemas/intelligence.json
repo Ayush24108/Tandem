@@ -3,6 +3,10 @@
   "title": "ProjectIntelligence",
   "description": "Structured project intelligence extracted from meeting transcripts",
   "type": "object",
+  "title": "StructuredIntelligence",
+  "description": "Output shape returned by analyze_transcript() and POST /meetings/{id}/process",
+  "type": "object",
+  "required": ["decisions", "tasks", "risks", "unresolved"],
   "properties": {
     "decisions": {
       "type": "array",
@@ -30,6 +34,10 @@
         },
         "required": ["id", "title", "reason", "status", "confidence"],
         "additionalProperties": false
+        "required": ["content"],
+        "properties": {
+          "content": { "type": "string" }
+        }
       }
     },
     "tasks": {
@@ -53,6 +61,12 @@
         },
         "required": ["id", "title", "owner", "status"],
         "additionalProperties": false
+        "required": ["title"],
+        "properties": {
+          "title":    { "type": "string" },
+          "assignee": { "type": "string" },
+          "status":   { "type": "string", "default": "pending" }
+        }
       }
     },
     "risks": {
@@ -76,6 +90,11 @@
         },
         "required": ["id", "title", "severity", "description"],
         "additionalProperties": false
+        "required": ["description"],
+        "properties": {
+          "description": { "type": "string" },
+          "mitigation":  { "type": "string" }
+        }
       }
     },
     "unresolved": {
@@ -101,4 +120,11 @@
   },
   "required": ["decisions", "tasks", "risks", "unresolved"],
   "additionalProperties": false
+        "required": ["description"],
+        "properties": {
+          "description": { "type": "string" }
+        }
+      }
+    }
+  }
 }

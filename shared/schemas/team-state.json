@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TeamState",
+  "description": "Current consolidated state of project intelligence across all meetings",
+  "type": "object",
+  "properties": {
+    "project_id": { "type": "string" },
+    "decisions": {
+      "type": "array",
+      "items": { "$ref": "intelligence.json#/properties/decisions/items" }
+    },
+    "tasks": {
+      "type": "array",
+      "items": { "$ref": "intelligence.json#/properties/tasks/items" }
+    },
+    "risks": {
+      "type": "array",
+      "items": { "$ref": "intelligence.json#/properties/risks/items" }
+    },
+    "unresolved": {
+      "type": "array",
+      "items": { "$ref": "intelligence.json#/properties/unresolved/items" }
+    },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "required": ["decisions", "tasks", "risks", "unresolved"],
+  "additionalProperties": false
+}

@@ -1,0 +1,10 @@
+# Tandem AI Dependencies
+# Core engine uses Python standard library for zero-dependency resilience and deterministic fallback.
+
+# Testing & Dev
+pytest>=8.0.0
+
+# Optional SDKs (if using native SDKs instead of direct HTTP API client)
+# openai>=1.30.0
+# google-generativeai>=0.5.0
+# pydantic>=2.0.0

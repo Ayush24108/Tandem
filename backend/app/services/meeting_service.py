@@ -90,35 +90,41 @@ def save_intelligence(
 
     try:
         # --- decisions ---
+        # ROPA returns: {"id", "title", "reason", "status", "confidence"}
+        # DB schema expects: content (TEXT NOT NULL)
         for item in intelligence.get("decisions", []):
             row = {
                 "project_id": project_id,
                 "meeting_id": meeting_id,
-                "content": item["content"],
+                "content": item.get("title") or item.get("content", ""),
             }
             res = db.table("decisions").insert(row).execute()
             if res.data:
                 saved["decisions"].append(res.data[0])
 
         # --- tasks ---
+        # ROPA returns: {"id", "title", "owner", "status"}
+        # DB schema expects: title, status, assignee
         for item in intelligence.get("tasks", []):
             row = {
                 "project_id": project_id,
                 "meeting_id": meeting_id,
-                "title":    item["title"],
+                "title":    item.get("title", ""),
                 "status":   item.get("status", "pending"),
-                "assignee": item.get("assignee"),
+                "assignee": item.get("assignee") or item.get("owner"),
             }
             res = db.table("tasks").insert(row).execute()
             if res.data:
                 saved["tasks"].append(res.data[0])
 
         # --- risks ---
+        # ROPA returns: {"id", "title", "severity", "description"}
+        # DB schema expects: description, mitigation
         for item in intelligence.get("risks", []):
             row = {
                 "project_id":  project_id,
                 "meeting_id":  meeting_id,
-                "description": item["description"],
+                "description": item.get("description") or item.get("title", ""),
                 "mitigation":  item.get("mitigation"),
             }
             res = db.table("risks").insert(row).execute()
@@ -126,11 +132,13 @@ def save_intelligence(
                 saved["risks"].append(res.data[0])
 
         # --- unresolved issues ---
+        # ROPA returns: {"id", "title", "status"}
+        # DB schema expects: description (TEXT NOT NULL)
         for item in intelligence.get("unresolved", []):
             row = {
                 "project_id":  project_id,
                 "meeting_id":  meeting_id,
-                "description": item["description"],
+                "description": item.get("title") or item.get("description", ""),
             }
             res = db.table("unresolved_issues").insert(row).execute()
             if res.data:

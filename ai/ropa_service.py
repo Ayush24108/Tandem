@@ -4,6 +4,7 @@ Transforms unstructured meeting transcripts into structured project intelligence
 """
 
 from __future__ import annotations
+import json
 import re
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
@@ -104,7 +105,9 @@ def deterministic_extract_intelligence(transcript: str) -> Dict[str, Any]:
         # Check explicit decisions
         decision_patterns = [
             r"let's use\s+([^.,;\n]+)",
-            r"we (?:decided to|will) use\s+([^.,;\n]+)",
+            r"we (?:decided to|decided on|will)\s+(?:select|use|go with)?\s*([^.,;\n]+)",
+            r"decided (?:to select|to use|on)?\s+([^.,;\n]+)",
+            r"confirmed\s+([^.,;\n]+)",
             r"agreed\.?\s*(?:let's use\s+([^.,;\n]+))?",
             r"choose\s+([^.,;\n]+)",
             r"selected\s+([^.,;\n]+)",

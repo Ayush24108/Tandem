@@ -1,4 +1,15 @@
-﻿node_modules/
+node_modules/
 .next/
 .env*.local
 *.log
+
+# Real env files with secrets — never commit these
+backend/.env
+ai/.env
+.env
+*.db
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo

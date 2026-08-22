@@ -181,8 +181,8 @@ def call_llm_api(prompt: str, system_message: Optional[str] = None, timeout: int
 
     # 3. Google Gemini API
     if gemini_api_key:
-        preferred_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
-        candidate_models = [preferred_model, "gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-2.5-flash-lite"]
+        preferred_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        candidate_models = [preferred_model, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash-lite", "gemini-1.5-pro"]
         # deduplicate while preserving order
         unique_models = []
         for m in candidate_models:

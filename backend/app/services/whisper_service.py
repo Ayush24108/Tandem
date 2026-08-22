@@ -1,6 +1,5 @@
 import os
 import logging
-import whisper
 from dotenv import load_dotenv
 
 # Load env vars
@@ -10,7 +9,13 @@ env_path = os.path.join(backend_dir, ".env")
 load_dotenv(dotenv_path=env_path)
 
 USE_MOCK_TRANSCRIPT = os.getenv("USE_MOCK_TRANSCRIPT", "false").lower() == "true"
-MOCK_TRANSCRIPT_CONTENT = "This is a prepared mock transcript from the development fallback system."
+MOCK_TRANSCRIPT_CONTENT = (
+    "Rahul: Let's use PostgreSQL for our primary database because our data is relational.\n"
+    "Priya: Agreed. PostgreSQL fits our ACID requirements.\n"
+    "Manit: I will implement the FastAPI endpoints and routes.\n"
+    "Rahul: I'll design the database schema and migration scripts.\n"
+    "Priya: Authentication integration might be delayed if we evaluate custom JWT."
+)
 
 # Global model cache
 model = None
@@ -18,6 +23,13 @@ model = None
 def get_whisper_model():
     global model
     if model is None:
+        try:
+            import whisper
+        except ImportError as e:
+            raise RuntimeError(
+                "Whisper package ('openai-whisper') or PyTorch is not installed in the environment. "
+                "Set USE_MOCK_TRANSCRIPT=true in backend/.env to use the mock transcript engine."
+            ) from e
         logging.info("Loading Whisper 'tiny' model...")
         model = whisper.load_model("tiny")
     return model

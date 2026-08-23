@@ -1,18 +1,11 @@
 import Link from 'next/link'
 import {
   ArrowRight,
-  MessageSquareText,
-  Brain,
-  Database,
-  CheckCircle2,
-  Layers,
   Sparkles,
-  Zap,
   Mic,
-  Activity,
-  Radio,
-  Cpu,
   ShieldCheck,
+  Radio,
+  Users,
 } from 'lucide-react'
 import FaultyTerminal from '@/components/ui/FaultyTerminal'
 import InteractiveBentoGrid from '@/components/ui/InteractiveBentoGrid'
@@ -56,10 +49,11 @@ export default function LandingPage() {
 
         <div className="flex items-center gap-3">
           <Link
-            href="/workspace"
+            href="/auth"
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-lg shadow-blue-600/30 hover:bg-blue-500 hover:scale-105 active:scale-95 transition-all"
           >
-            <span>Enter Workspace</span>
+            <ShieldCheck className="w-3.5 h-3.5 text-cyan-300" />
+            <span>Enter Tandem</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
@@ -71,9 +65,7 @@ export default function LandingPage() {
         <div className="mb-4">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/[0.06] border border-white/[0.12] text-slate-200 text-xs font-semibold shadow-sm backdrop-blur-md hover:border-blue-400/50 transition-colors cursor-default">
             <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-            <span className="text-white">Understand Together. Build Better.</span>
-            <span className="text-slate-500">•</span>
-            <span className="text-blue-400 font-mono text-[11px]">Zero manual notes</span>
+            <span className="text-white">Tandem is the shared AI memory layer for distributed teams.</span>
           </div>
         </div>
 
@@ -86,24 +78,25 @@ export default function LandingPage() {
         </h1>
 
         <p className="text-base md:text-lg text-slate-300 max-w-2xl font-normal leading-relaxed mb-10">
-          Tandem captures technical discussions, records confirmed architectural decisions, assigns action items, and maintains a living state of your engineering projects.
+          NFC ID authentication, voice biometric verification, remote online meetings, and continuous architectural state synthesis for high-velocity engineering teams.
         </p>
 
         {/* CTA Group */}
         <div className="flex flex-col sm:flex-row items-center gap-4 mb-20 w-full justify-center">
           <Link
-            href="/workspace"
+            href="/auth"
             className="inline-flex items-center justify-center gap-2.5 px-8 py-4 rounded-xl bg-blue-600 text-white text-sm font-bold shadow-xl shadow-blue-600/35 hover:bg-blue-500 hover:shadow-blue-500/50 hover:-translate-y-0.5 active:translate-y-0 transition-all w-full sm:w-auto"
           >
-            <span>Enter Workspace Dashboard</span>
+            <ShieldCheck className="w-4 h-4 text-cyan-300" />
+            <span>Get Started</span>
             <ArrowRight className="w-4 h-4" />
           </Link>
           <Link
-            href="/meeting"
+            href="/dashboard"
             className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-white/[0.07] border border-white/[0.15] text-slate-200 text-sm font-semibold shadow-sm hover:bg-white/[0.12] hover:border-white/30 backdrop-blur-md transition-all w-full sm:w-auto"
           >
-            <Mic className="w-4 h-4 text-blue-400" />
-            <span>Launch Live Recorder</span>
+            <Users className="w-4 h-4 text-blue-400" />
+            <span>Open Team Dashboard</span>
           </Link>
         </div>
 

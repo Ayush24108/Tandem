@@ -11,15 +11,11 @@ import {
   AlertTriangle,
   HelpCircle,
   Clock,
-  Sparkles,
   User,
   ArrowRight,
   X,
-  FileText,
   Activity,
   Layers,
-  Shield,
-  Zap,
 } from 'lucide-react'
 import { AskTandem } from '@/components/ai/AskTandem'
 
@@ -32,6 +28,18 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
   const [isTextModalOpen, setIsTextModalOpen] = useState(false)
   const [textConversation, setTextConversation] = useState('')
   const [submittedTextNote, setSubmittedTextNote] = useState<string | null>(null)
+
+  const decisions = project.decisions || []
+  const tasks = project.tasks || []
+  const risks = project.risks || []
+  const unresolvedIssues = project.unresolvedIssues || []
+  const recentActivity = project.recentActivity || []
+  const teamPulse = project.teamPulse || {
+    decisionsCount: decisions.length,
+    tasksCompletedCount: tasks.length,
+    unresolvedCount: unresolvedIssues.length,
+    risksCount: risks.length,
+  }
 
   const handleTextSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -52,14 +60,14 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
           <div>
             <div className="flex items-center gap-2.5 mb-1.5">
               <span className="text-[10px] font-bold font-mono uppercase tracking-wider text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2.5 py-0.5 rounded-full">
-                {project.tagline}
+                {project.tagline || 'Project Intelligence Space'}
               </span>
               <span className="text-[11px] font-mono text-slate-400">
                 LIVING PROJECT STATE
               </span>
             </div>
             <h1 className="text-3xl font-extrabold text-white tracking-tight">
-              {project.name.toUpperCase()}
+              {(project.name || 'PROJECT').toUpperCase()}
             </h1>
             <p className="text-xs md:text-sm text-slate-400 mt-1 max-w-2xl">
               {project.description}
@@ -102,7 +110,7 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
                 <CheckCircle2 className="w-4 h-4 text-blue-400" />
               </div>
               <p className="text-3xl font-extrabold text-white tracking-tight">
-                {project.teamPulse.decisionsCount}{' '}
+                {teamPulse.decisionsCount ?? decisions.length}{' '}
                 <span className="text-xs font-medium text-slate-500">decisions</span>
               </p>
             </div>
@@ -117,7 +125,7 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
                 </span>
               </div>
               <p className="text-3xl font-extrabold text-white tracking-tight">
-                {project.teamPulse.tasksCompletedCount}{' '}
+                {teamPulse.tasksCompletedCount ?? tasks.length}{' '}
                 <span className="text-xs font-medium text-slate-500">completed</span>
               </p>
             </div>
@@ -130,7 +138,7 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
                 <HelpCircle className="w-4 h-4 text-slate-500" />
               </div>
               <p className="text-3xl font-extrabold text-white tracking-tight">
-                {project.teamPulse.unresolvedCount}{' '}
+                {teamPulse.unresolvedCount ?? unresolvedIssues.length}{' '}
                 <span className="text-xs font-medium text-slate-500">pending</span>
               </p>
             </div>
@@ -143,7 +151,7 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
                 <AlertTriangle className="w-4 h-4 text-amber-400" />
               </div>
               <p className="text-3xl font-extrabold text-white tracking-tight">
-                {project.teamPulse.risksCount}{' '}
+                {teamPulse.risksCount ?? risks.length}{' '}
                 <span className="text-xs font-medium text-slate-500">risk</span>
               </p>
             </div>
@@ -166,47 +174,51 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
                   </h3>
                 </div>
                 <span className="text-xs font-bold font-mono text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2.5 py-0.5 rounded-full">
-                  {project.decisions.length} Active
+                  {decisions.length} Active
                 </span>
               </div>
 
               <div className="space-y-3">
-                {project.decisions.map(decision => (
-                  <div
-                    key={decision.id}
-                    className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:border-blue-500/30 transition-all space-y-2"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-2.5">
-                        <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
-                          ✓
-                        </span>
-                        <div>
-                          <h4 className="text-sm font-bold text-white">
-                            {decision.title}
-                          </h4>
-                          {decision.reason && (
-                            <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                              <span className="font-semibold text-blue-300">Reason: </span>
-                              {decision.reason}
-                            </p>
-                          )}
+                {decisions.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic py-3 text-center">No decisions recorded yet.</p>
+                ) : (
+                  decisions.map(decision => (
+                    <div
+                      key={decision.id}
+                      className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:border-blue-500/30 transition-all space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                            ✓
+                          </span>
+                          <div>
+                            <h4 className="text-sm font-bold text-white">
+                              {decision.title}
+                            </h4>
+                            {decision.reason && (
+                              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                                <span className="font-semibold text-blue-300">Reason: </span>
+                                {decision.reason}
+                              </p>
+                            )}
+                          </div>
                         </div>
+
+                        {decision.status && (
+                          <span className="text-[10px] font-bold font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded uppercase tracking-wide flex-shrink-0">
+                            {decision.status}
+                          </span>
+                        )}
                       </div>
 
-                      {decision.status && (
-                        <span className="text-[10px] font-bold font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded uppercase tracking-wide flex-shrink-0">
-                          {decision.status}
-                        </span>
-                      )}
+                      <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-slate-500 font-mono">
+                        <span>{decision.timestamp || 'Recorded by Tandem AI'}</span>
+                        <span className="text-slate-400 font-sans">Source: Meeting Ingestion</span>
+                      </div>
                     </div>
-
-                    <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-slate-500 font-mono">
-                      <span>{decision.timestamp || 'Recorded by Tandem AI'}</span>
-                      <span className="text-slate-400 font-sans">Source: Meeting Ingestion</span>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 
@@ -222,39 +234,43 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
                   </h3>
                 </div>
                 <span className="text-xs font-mono text-slate-400">
-                  {project.tasks.length} Action Items
+                  {tasks.length} Action Items
                 </span>
               </div>
 
               <div className="space-y-2.5">
-                {project.tasks.map(task => {
-                  const assigneeName =
-                    typeof task.assignee === 'string'
-                      ? task.assignee
-                      : task.assignee.name
+                {tasks.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic py-3 text-center">No open tasks.</p>
+                ) : (
+                  tasks.map(task => {
+                    const assigneeName =
+                      typeof task.assignee === 'string'
+                        ? task.assignee
+                        : task.assignee?.name || 'Unassigned'
 
-                  return (
-                    <div
-                      key={task.id}
-                      className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between gap-4 hover:border-blue-500/30 transition-all"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
-                        <p className="text-xs md:text-sm font-semibold text-slate-200 truncate">
-                          {task.title}
-                        </p>
-                      </div>
+                    return (
+                      <div
+                        key={task.id}
+                        className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between gap-4 hover:border-blue-500/30 transition-all"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
+                          <p className="text-xs md:text-sm font-semibold text-slate-200 truncate">
+                            {task.title}
+                          </p>
+                        </div>
 
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className="text-xs text-slate-500 font-mono">→</span>
-                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/[0.06] border border-white/[0.1] text-xs font-bold text-slate-200">
-                          <User className="w-3.5 h-3.5 text-blue-400" />
-                          <span>{assigneeName}</span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="text-xs text-slate-500 font-mono">→</span>
+                          <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/[0.06] border border-white/[0.1] text-xs font-bold text-slate-200">
+                            <User className="w-3.5 h-3.5 text-blue-400" />
+                            <span>{assigneeName}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -269,15 +285,15 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
                   <span>Risks & Roadblocks</span>
                 </h3>
                 <span className="text-[10px] font-bold font-mono text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded">
-                  {project.risks.length} Active
+                  {risks.length} Active
                 </span>
               </div>
 
               <div className="space-y-3">
-                {project.risks.length === 0 ? (
+                {risks.length === 0 ? (
                   <p className="text-xs text-slate-500 italic py-2">No active risks identified.</p>
                 ) : (
-                  project.risks.map(risk => (
+                  risks.map(risk => (
                     <div
                       key={risk.id}
                       className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-1.5"
@@ -304,15 +320,15 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
                   <span>Unresolved Items</span>
                 </h3>
                 <span className="text-[10px] font-bold font-mono text-slate-400 bg-white/[0.06] px-2 py-0.5 rounded">
-                  {project.unresolvedIssues.length} Pending
+                  {unresolvedIssues.length} Pending
                 </span>
               </div>
 
               <div className="space-y-3">
-                {project.unresolvedIssues.length === 0 ? (
+                {unresolvedIssues.length === 0 ? (
                   <p className="text-xs text-slate-500 italic py-2">All issues resolved.</p>
                 ) : (
-                  project.unresolvedIssues.map(issue => (
+                  unresolvedIssues.map(issue => (
                     <div
                       key={issue.id}
                       className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.06] space-y-1"
@@ -331,26 +347,63 @@ export function ProjectDetailView({ project }: ProjectDetailViewProps) {
               </div>
             </div>
 
+            {/* RECENT ONLINE MEETINGS */}
+            <div className="bg-[#0b101d]/90 backdrop-blur-md border border-white/[0.08] rounded-3xl p-6 shadow-xl space-y-3">
+              <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-200 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-cyan-400" />
+                  <span>Recent Meetings</span>
+                </h3>
+                <Link
+                  href="/meetings"
+                  className="text-[10px] font-mono text-cyan-400 hover:underline font-bold"
+                >
+                  + New Meeting
+                </Link>
+              </div>
+
+              <div className="space-y-2.5">
+                <Link
+                  href="/meetings/meeting-alpha-1"
+                  className="p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:border-cyan-500/40 hover:bg-white/[0.05] transition-all flex items-center justify-between block group"
+                >
+                  <div>
+                    <h4 className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors">
+                      Product Architecture Discussion
+                    </h4>
+                    <p className="text-[10px] text-slate-400 mt-0.5 font-mono">
+                      Host: Manit • Today
+                    </p>
+                  </div>
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-cyan-400 transition-colors" />
+                </Link>
+              </div>
+            </div>
+
             {/* RECENT ACTIVITY */}
             <div className="bg-[#0b101d]/90 backdrop-blur-md border border-white/[0.08] rounded-3xl p-6 shadow-xl space-y-3">
               <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
                 <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-200 flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-slate-400" />
+                  <Activity className="w-4 h-4 text-slate-400" />
                   <span>State Audit Trail</span>
                 </h3>
               </div>
 
               <div className="space-y-3.5">
-                {project.recentActivity.map(activity => (
-                  <div key={activity.id} className="text-xs space-y-0.5">
-                    <p className="font-semibold text-slate-300">{activity.text}</p>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
-                      {activity.author && <span className="text-blue-400">by {activity.author}</span>}
-                      <span>•</span>
-                      <span>{activity.timestamp}</span>
+                {recentActivity.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic py-2">No recent activity.</p>
+                ) : (
+                  recentActivity.map(activity => (
+                    <div key={activity.id} className="text-xs space-y-0.5">
+                      <p className="font-semibold text-slate-300">{activity.text}</p>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
+                        {activity.author && <span className="text-blue-400">by {activity.author}</span>}
+                        <span>•</span>
+                        <span>{activity.timestamp}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </div>

@@ -10,7 +10,7 @@ interface NfcTouchpointModalProps {
   projectName?: string
 }
 
-export default function NfcTouchpointModal({
+export function NfcTouchpointModal({
   isOpen,
   onClose,
   userName = 'Kangna (You)',
@@ -133,3 +133,6 @@ export default function NfcTouchpointModal({
     </div>
   )
 }
+
+export default NfcTouchpointModal
+

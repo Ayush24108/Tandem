@@ -6,6 +6,8 @@ import Dither from '@/components/ui/Dither'
 import PersonalLiveStateDrawer from '@/components/features/PersonalLiveStateDrawer'
 import { InteractiveWorkspaceView } from '@/components/workspace/InteractiveWorkspaceView'
 
+export const dynamic = 'force-dynamic'
+
 export default async function WorkspacePage() {
   const projects = await getProjects()
 

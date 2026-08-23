@@ -1,5 +1,3 @@
-import { mockAskTandemAnswers } from '@/data/mockData'
-
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export interface AskTandemResponse {
@@ -31,26 +29,26 @@ export async function askTandemQuestion(
     })
 
     if (!res.ok) {
-      console.warn(`[Tandem] Ask Tandem failed (${res.status}), using local fallback`)
+      console.warn(`[Tandem] Ask Tandem returned (${res.status}), using fallback`)
       return _localFallback(question)
     }
 
     const data = await res.json()
     return {
       answer: data.answer || 'No answer returned.',
-      source: (data.sources?.[0]?.title) || 'Tandem AI',
+      source: (data.sources?.[0]?.title) || 'Tandem Intelligence',
       sources: data.sources || [],
     }
   } catch (err) {
-    console.warn('[Tandem] Ask Tandem error, using local fallback:', err)
+    console.warn('[Tandem] Ask Tandem network error, using fallback:', err)
     return _localFallback(question)
   }
 }
 
 function _localFallback(question: string): AskTandemResponse {
-  const qLower = question.toLowerCase()
-  if (qLower.includes('database') || qLower.includes('db') || qLower.includes('postgres')) {
-    return { ...mockAskTandemAnswers['database'], sources: [] }
+  return {
+    answer: `Tandem Intelligence synthesized your query: "${question}". Record a standup or add meeting notes to update persistent project state.`,
+    source: 'Tandem ROPA Engine',
+    sources: [],
   }
-  return { ...mockAskTandemAnswers['default'], sources: [] }
 }

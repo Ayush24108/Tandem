@@ -18,14 +18,7 @@ export function AskTandem({ projectId }: AskTandemProps) {
       answer: string
       source: string
     }>
-  >([
-    {
-      question: 'What did we decide about the database?',
-      answer:
-        'The team selected PostgreSQL because the project requires relational data relationships and strict ACID compliance for clinical records.',
-      source: 'Architecture Meeting',
-    },
-  ])
+  >([])
 
   const handleAsk = async (queryText?: string) => {
     const q = (queryText || inputQuery).trim()
@@ -100,6 +93,15 @@ export function AskTandem({ projectId }: AskTandemProps) {
 
           {/* Body: Answers & Citations */}
           <div className="p-4 space-y-4 max-h-80 overflow-y-auto">
+            {conversation.length === 0 && !loading && (
+              <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05] text-center space-y-1.5">
+                <p className="text-xs font-semibold text-slate-300">Ready for questions</p>
+                <p className="text-[11px] text-slate-500">
+                  Ask any question about your live meeting decisions, assigned tasks, or engineering state.
+                </p>
+              </div>
+            )}
+
             {conversation.map((item, idx) => (
               <div key={idx} className="space-y-2 text-xs">
                 {/* User query */}

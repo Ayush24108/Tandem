@@ -8,8 +8,6 @@ import {
   Sparkles,
   ArrowRight,
   CheckCircle2,
-  AlertCircle,
-  Clock,
   Users,
   Brain,
   Layers,
@@ -21,16 +19,21 @@ import {
   HelpCircle,
   Radio,
   Volume2,
-  Sliders,
-  ShieldCheck,
-  Zap,
-  Activity,
   Cpu,
+  ShieldCheck,
 } from 'lucide-react'
 import { uploadMeetingAudio, extractMeetingIntelligence } from '@/lib/api/meetings'
 import { getProjectById, updateLocalProjectState } from '@/lib/api/projects'
+import {
+  getVoiceProfiles,
+  matchSpeakerByVoiceprint,
+  analyzeAudioFrequencies,
+  parseSpeakerPrefix,
+  getActiveUser,
+  VoiceProfile,
+} from '@/lib/api/voiceProfiles'
+import VoiceEnrollmentModal from '@/components/features/VoiceEnrollmentModal'
 import { MeetingIntelligence, TranscriptEntry } from '@/types'
-import { mockMeetingTranscript, mockExtractedIntelligence } from '@/data/mockData'
 
 type MeetingStep = 'idle' | 'recording' | 'processing' | 'transcript' | 'intelligence'
 
@@ -39,62 +42,63 @@ export function MeetingRecorder() {
   const [step, setStep] = useState<MeetingStep>('idle')
   const [seconds, setSeconds] = useState(0)
   const [processingStage, setProcessingStage] = useState(0)
-  const [transcript, setTranscript] = useState<TranscriptEntry[]>(mockMeetingTranscript)
-  const [intelligence, setIntelligence] = useState<MeetingIntelligence>(mockExtractedIntelligence)
+  const [transcript, setTranscript] = useState<TranscriptEntry[]>([])
+  const [liveSpokenText, setLiveSpokenText] = useState<string>('')
+  const [intelligence, setIntelligence] = useState<MeetingIntelligence>({
+    decisions: [],
+    actionItems: [],
+    risks: [],
+    unresolved: [],
+  })
   const [updatedSuccess, setUpdatedSuccess] = useState(false)
-  const [activeSpeaker, setActiveSpeaker] = useState<string>('Rahul')
-  const [liveDetections, setLiveDetections] = useState<string[]>([])
-  const [audioGain, setAudioGain] = useState<number>(85)
+  const [activeSpeaker, setActiveSpeaker] = useState<string>('Kangna')
+  const [speakerConfidence, setSpeakerConfidence] = useState<number>(0.95)
+  const [liveFreqHz, setLiveFreqHz] = useState<number>(215)
+  const [liveBars, setLiveBars] = useState<number[]>([35, 60, 80, 45, 90, 55, 70, 95, 40, 65, 85, 50])
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false)
+  const [voiceProfiles, setVoiceProfilesState] = useState<VoiceProfile[]>([])
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const speechRecognitionRef = useRef<any>(null)
+  const liveTurnsRef = useRef<TranscriptEntry[]>([])
+  const currentSpeakerRef = useRef<string>('Kangna')
   const audioChunksRef = useRef<Blob[]>([])
   const timerRef = useRef<NodeJS.Timeout | null>(null)
-  const speakerIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const isRecordingRef = useRef<boolean>(false)
+  const animFrameRef = useRef<number | null>(null)
 
-  // Live Timer & Speaker cycling during recording
+  useEffect(() => {
+    const profiles = getVoiceProfiles()
+    setVoiceProfilesState(profiles)
+    const active = getActiveUser()
+    if (active) {
+      setActiveSpeaker(active.name)
+      currentSpeakerRef.current = active.name
+      setLiveFreqHz(active.fundamentalFreq)
+    }
+  }, [])
+
+  // Live Timer
   useEffect(() => {
     if (step === 'recording') {
       timerRef.current = setInterval(() => {
         setSeconds(prev => prev + 1)
       }, 1000)
 
-      const speakers = ['Rahul', 'Priya', 'Manit', 'Kangna']
-      speakerIntervalRef.current = setInterval(() => {
-        const randomSpeaker = speakers[Math.floor(Math.random() * speakers.length)]
-        setActiveSpeaker(randomSpeaker)
-      }, 4000)
-
-      // Pop live detected insights during recording
-      const timeout1 = setTimeout(() => {
-        setLiveDetections(prev => [
-          ...prev,
-          '⚡ Decision Detected: PostgreSQL chosen for ACID transaction integrity',
-        ])
-      }, 4000)
-
-      const timeout2 = setTimeout(() => {
-        setLiveDetections(prev => [
-          ...prev,
-          '📌 Action Item: Configure WebNFC badge sync for Room 402 (Kangna)',
-        ])
-      }, 8000)
-
       return () => {
         if (timerRef.current) clearInterval(timerRef.current)
-        if (speakerIntervalRef.current) clearInterval(speakerIntervalRef.current)
-        clearTimeout(timeout1)
-        clearTimeout(timeout2)
       }
     } else {
       if (timerRef.current) clearInterval(timerRef.current)
-      if (speakerIntervalRef.current) clearInterval(speakerIntervalRef.current)
     }
   }, [step])
 
   // Processing stage sequencing animation
   useEffect(() => {
     if (step === 'processing') {
-      setProcessingStage(1) // Audio captured & Transcribing
+      setProcessingStage(1)
       const t1 = setTimeout(() => setProcessingStage(2), 1200)
       const t2 = setTimeout(() => setProcessingStage(3), 2400)
       const t3 = setTimeout(() => setProcessingStage(4), 3400)
@@ -111,35 +115,163 @@ export function MeetingRecorder() {
     }
   }, [step])
 
-  // Format mm:ss
   const formatTime = (totalSecs: number) => {
     const mins = Math.floor(totalSecs / 60)
     const secs = totalSecs % 60
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
   }
 
-  // Start Meeting Recording
+  // Start Real Microphone Recording + Continuous Speech Recognition + Acoustic Diarization
   const handleStartRecording = async () => {
     setSeconds(0)
-    setLiveDetections([])
+    setLiveSpokenText('')
     audioChunksRef.current = []
+    liveTurnsRef.current = []
+    isRecordingRef.current = true
 
     try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      if (typeof window !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        const mediaRecorder = new MediaRecorder(stream)
+
+        // 1. High-Resolution Acoustic Pitch Analyzer (FFT Size 2048 for precise F0)
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+        audioContextRef.current = audioCtx
+
+        const source = audioCtx.createMediaStreamSource(stream)
+        const analyser = audioCtx.createAnalyser()
+        analyser.fftSize = 2048
+        analyser.smoothingTimeConstant = 0.8
+        source.connect(analyser)
+        analyserRef.current = analyser
+
+        const bufferLength = analyser.frequencyBinCount
+        const dataArray = new Uint8Array(bufferLength)
+
+        const profiles = getVoiceProfiles()
+
+        const trackFrequencies = () => {
+          if (!analyserRef.current || !isRecordingRef.current) return
+          analyserRef.current.getByteFrequencyData(dataArray)
+
+          const analysis = analyzeAudioFrequencies(dataArray, audioCtx.sampleRate)
+          
+          if (analysis.energy > 8) {
+            setLiveFreqHz(analysis.fundamentalFreq)
+            const match = matchSpeakerByVoiceprint(analysis.fundamentalFreq, analysis.spectralCentroid, profiles)
+            if (match.confidence >= 0.70) {
+              setActiveSpeaker(match.matchedProfile.name)
+              currentSpeakerRef.current = match.matchedProfile.name
+              setSpeakerConfidence(match.confidence)
+            }
+          }
+
+          const bars: number[] = []
+          for (let i = 0; i < 16; i++) {
+            bars.push(Math.min(100, Math.max(15, (dataArray[i * 4] || 20))))
+          }
+          setLiveBars(bars)
+
+          animFrameRef.current = requestAnimationFrame(trackFrequencies)
+        }
+
+        trackFrequencies()
+
+        // 2. Continuous Browser Speech Recognition with Watchdog Auto-Restart Loop
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        if (SpeechRecognition) {
+          const recognition = new SpeechRecognition()
+          recognition.continuous = true
+          recognition.interimResults = true
+          recognition.lang = 'en-US'
+
+          recognition.onresult = (event: any) => {
+            let interimTranscript = ''
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+              const text = event.results[i][0].transcript.trim()
+              if (event.results[i].isFinal) {
+                if (text) {
+                  // Check if speaker explicitly spoke name prefix or use live acoustic attribution
+                  const { speakerName, cleanText } = parseSpeakerPrefix(text, profiles)
+                  const attributedSpeaker = speakerName || currentSpeakerRef.current
+                  if (speakerName) {
+                    currentSpeakerRef.current = speakerName
+                    setActiveSpeaker(speakerName)
+                  }
+
+                  const newEntry: TranscriptEntry = {
+                    id: `tr-${Date.now()}-${Math.random()}`,
+                    speaker: attributedSpeaker,
+                    text: cleanText || text,
+                    timestamp: formatTime(seconds),
+                  }
+                  liveTurnsRef.current.push(newEntry)
+                  setTranscript([...liveTurnsRef.current])
+                  setLiveSpokenText('')
+                }
+              } else {
+                interimTranscript += text + ' '
+              }
+            }
+            if (interimTranscript) {
+              setLiveSpokenText(interimTranscript)
+            }
+          }
+
+          // Auto-Restart Watchdog: Keeps recognition alive indefinitely
+          recognition.onend = () => {
+            if (isRecordingRef.current) {
+              try {
+                recognition.start()
+              } catch (e) {
+                // Ignore already running
+              }
+            }
+          }
+
+          recognition.onerror = (err: any) => {
+            console.warn('[Tandem] SpeechRecognition warning/error:', err?.error)
+            if (isRecordingRef.current && (err?.error === 'no-speech' || err?.error === 'network' || err?.error === 'aborted')) {
+              setTimeout(() => {
+                if (isRecordingRef.current) {
+                  try {
+                    recognition.start()
+                  } catch (e) {}
+                }
+              }, 250)
+            }
+          }
+
+          try {
+            recognition.start()
+            speechRecognitionRef.current = recognition
+          } catch (e) {
+            console.warn('[Tandem] Speech recognition start error:', e)
+          }
+        }
+
+        // 3. MediaRecorder continuous buffer capture
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : MediaRecorder.isTypeSupported('audio/mp4')
+          ? 'audio/mp4'
+          : ''
+
+        const options = mimeType ? { mimeType } : undefined
+        const mediaRecorder = new MediaRecorder(stream, options)
         mediaRecorderRef.current = mediaRecorder
 
         mediaRecorder.ondataavailable = event => {
-          if (event.data.size > 0) {
+          if (event.data && event.data.size > 0) {
             audioChunksRef.current.push(event.data)
           }
         }
 
-        mediaRecorder.start()
+        mediaRecorder.start(500)
       }
-    } catch {
-      console.log('Using simulated audio stream for demonstration')
+    } catch (err) {
+      console.warn('[Tandem] Microphone initialization error:', err)
     }
 
     setStep('recording')
@@ -147,23 +279,58 @@ export function MeetingRecorder() {
 
   // End Meeting Recording
   const handleEndMeeting = async () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop()
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop())
-    }
-
+    isRecordingRef.current = false
     setStep('processing')
 
-    const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+    if (speechRecognitionRef.current) {
+      try {
+        speechRecognitionRef.current.stop()
+      } catch (e) {}
+    }
+
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close()
+    }
+
+    let recordedBlob: Blob | null = null
+    const recorder = mediaRecorderRef.current
+
+    if (recorder && recorder.state !== 'inactive') {
+      recordedBlob = await new Promise<Blob>((resolve) => {
+        recorder.onstop = () => {
+          recorder.stream.getTracks().forEach(track => track.stop())
+          const mime = recorder.mimeType || 'audio/webm'
+          const finalBlob = new Blob(audioChunksRef.current, { type: mime })
+          resolve(finalBlob)
+        }
+        recorder.stop()
+      })
+    } else if (audioChunksRef.current.length > 0) {
+      recordedBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+    }
+
+    // Build the clean multi-turn transcript string from actual spoken speech
+    const turns = liveTurnsRef.current
+    const clientTranscriptString = turns.length > 0
+      ? turns.map(t => `${t.speaker}: ${t.text}`).join('\n')
+      : liveSpokenText
+      ? `${activeSpeaker}: ${liveSpokenText}`
+      : ''
+
     try {
-      const uploadRes = await uploadMeetingAudio(audioBlob, 'meeting-alpha-1')
-      if (uploadRes.transcript && uploadRes.transcript.length > 0) {
-        setTranscript(uploadRes.transcript)
+      if (recordedBlob && recordedBlob.size > 0) {
+        const uploadRes = await uploadMeetingAudio(recordedBlob, 'meeting-alpha-1', clientTranscriptString)
+        if (uploadRes.transcript && uploadRes.transcript.length > 0) {
+          setTranscript(uploadRes.transcript)
+        }
       }
-      const intelRes = await extractMeetingIntelligence('meeting-alpha-1')
-      setIntelligence(intelRes)
+      const intelRes = await extractMeetingIntelligence('meeting-alpha-1', clientTranscriptString)
+      if (intelRes) {
+        setIntelligence(intelRes)
+      }
     } catch (err) {
-      console.error(err)
+      console.error('[Tandem] Meeting processing error:', err)
     }
   }
 
@@ -173,31 +340,66 @@ export function MeetingRecorder() {
 
     const currentProject = await getProjectById('project-alpha')
     if (currentProject) {
+      const extractedDecisions = (
+        intelligence.decisions && intelligence.decisions.length > 0
+          ? intelligence.decisions
+          : intelligence.decision
+          ? [intelligence.decision]
+          : []
+      ).map((d, i) => ({
+        id: `d-new-${Date.now()}-${i}`,
+        title: d.title,
+        reason: d.reason || '',
+        status: 'confirmed' as const,
+        timestamp: 'Just now (from Meeting)',
+        projectId: 'project-alpha',
+      }))
+
+      const extractedTasks = (intelligence.actionItems || []).map((t, i) => ({
+        id: `t-new-${Date.now()}-${i}`,
+        title: t.task,
+        assignee: t.assignee || activeSpeaker || 'Unassigned',
+        status: 'todo' as const,
+        priority: t.priority || 'medium',
+        projectId: 'project-alpha',
+      }))
+
+      const extractedRisks = (intelligence.risks || []).map((r, i) => ({
+        id: `r-new-${Date.now()}-${i}`,
+        title: r.title,
+        description: r.description || '',
+        severity: (r.severity as any) || 'medium',
+        status: 'open' as const,
+        projectId: 'project-alpha',
+      }))
+
+      const extractedUnresolved = (intelligence.unresolved || []).map((u, i) => ({
+        id: `u-new-${Date.now()}-${i}`,
+        title: u.title,
+        description: u.description || '',
+        projectId: 'project-alpha',
+      }))
+
       const updatedProject = {
         ...currentProject,
         teamPulse: {
           ...currentProject.teamPulse,
-          decisionsCount: currentProject.teamPulse.decisionsCount + 1,
+          decisionsCount: currentProject.teamPulse.decisionsCount + extractedDecisions.length,
+          risksCount: currentProject.teamPulse.risksCount + extractedRisks.length,
+          unresolvedCount: currentProject.teamPulse.unresolvedCount + extractedUnresolved.length,
         },
-        decisions: [
-          {
-            id: `d-new-${Date.now()}`,
-            title: intelligence.decision?.title || 'Use PostgreSQL',
-            reason: intelligence.decision?.reason || 'Relational data requirements and ACID compliance',
-            status: 'confirmed' as const,
-            timestamp: 'Just now (from Meeting)',
-            projectId: 'project-alpha',
-          },
-          ...currentProject.decisions,
-        ],
+        decisions: [...extractedDecisions, ...currentProject.decisions],
+        tasks: [...extractedTasks, ...currentProject.tasks],
+        risks: [...extractedRisks, ...currentProject.risks],
+        unresolvedIssues: [...extractedUnresolved, ...currentProject.unresolvedIssues],
         recentActivity: [
-          {
-            id: `act-new-${Date.now()}`,
-            text: `Confirmed decision: ${intelligence.decision?.title || 'Use PostgreSQL'}`,
+          ...extractedDecisions.map(d => ({
+            id: `act-${Date.now()}-${d.id}`,
+            text: `Confirmed decision: ${d.title}`,
             timestamp: 'Just now',
-            author: 'Tandem AI (Meeting)',
+            author: `Tandem AI (${activeSpeaker})`,
             type: 'decision' as const,
-          },
+          })),
           ...currentProject.recentActivity,
         ],
       }
@@ -217,19 +419,22 @@ export function MeetingRecorder() {
           <div className="flex items-center gap-2 text-xs font-semibold text-blue-400 mb-1">
             <span>Project Alpha</span>
             <ChevronRight className="w-3.5 h-3.5 text-slate-600" />
-            <span className="text-slate-400">Architecture Sync</span>
+            <span className="text-slate-400">Live Voice Capture</span>
           </div>
           <h1 className="text-2xl font-extrabold text-white tracking-tight">
             Meeting Intelligence Studio
           </h1>
         </div>
 
-        {/* State Badge */}
+        {/* State Badge & Voice Registry */}
         <div className="flex items-center gap-2.5">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-mono font-bold">
+          <button
+            onClick={() => setIsVoiceModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-mono font-bold hover:bg-blue-500/20 transition-all"
+          >
             <Radio className="w-3.5 h-3.5 animate-pulse text-blue-400" />
-            <span>ROOM 402 PAIRED</span>
-          </div>
+            <span>VOICE ID: {activeSpeaker.toUpperCase()}</span>
+          </button>
 
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-300 bg-white/[0.06] px-3.5 py-1.5 rounded-xl border border-white/[0.1] shadow-xs">
             <span
@@ -263,104 +468,99 @@ export function MeetingRecorder() {
             Record Live Engineering Standup
           </h2>
           <p className="text-xs md:text-sm text-slate-400 max-w-lg mb-8 leading-relaxed">
-            Speak naturally. Tandem streams audio to Whisper on edge silicon, identifies active speakers, extracts decisions via ROPA, and syncs living state with zero manual notes.
+            Speak naturally into your microphone. Tandem transcribes your live speech in real time, attributes each turn to your registered voice frequency ID, and extracts decisions into Supabase.
           </p>
 
-          <button
-            onClick={handleStartRecording}
-            className="inline-flex items-center gap-2.5 px-8 py-4 rounded-xl bg-blue-600 text-white text-base font-bold shadow-xl shadow-blue-600/35 hover:bg-blue-500 active:scale-95 transition-all"
-          >
-            <Mic className="w-5 h-5 animate-pulse" />
-            <span>Start Live Session</span>
-          </button>
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <button
+              onClick={handleStartRecording}
+              className="inline-flex items-center gap-2.5 px-8 py-4 rounded-xl bg-blue-600 text-white text-base font-bold shadow-xl shadow-blue-600/35 hover:bg-blue-500 active:scale-95 transition-all"
+            >
+              <Mic className="w-5 h-5 animate-pulse" />
+              <span>Start Live Session</span>
+            </button>
 
-          {/* Quick Mic Calibration Strip */}
-          <div className="w-full max-w-md mt-10 p-4 bg-[#070b14] rounded-2xl border border-white/[0.06] flex items-center justify-between text-xs text-slate-400">
-            <div className="flex items-center gap-2">
-              <Volume2 className="w-4 h-4 text-cyan-400" />
-              <span>Mic Gain: <strong>{audioGain}%</strong></span>
-            </div>
-            <input
-              type="range"
-              min="20"
-              max="100"
-              value={audioGain}
-              onChange={e => setAudioGain(Number(e.target.value))}
-              className="w-36 accent-blue-500 cursor-pointer"
-            />
-            <span className="font-mono text-emerald-400 font-bold">READY</span>
+            <button
+              onClick={() => setIsVoiceModalOpen(true)}
+              className="inline-flex items-center gap-2 px-6 py-4 rounded-xl bg-white/[0.06] border border-white/[0.1] text-slate-300 text-sm font-semibold hover:bg-white/[0.12] hover:text-white transition-all"
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>Register / Switch Voice ID</span>
+            </button>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-6 mt-8 pt-6 border-t border-white/[0.08] text-xs text-slate-400 font-medium">
+          <div className="flex flex-wrap items-center justify-center gap-6 mt-10 pt-6 border-t border-white/[0.08] text-xs text-slate-400 font-medium">
             <div className="flex items-center gap-1.5">
               <Users className="w-3.5 h-3.5 text-blue-400" />
-              <span>Diarization: Rahul, Manit, Priya, Kangna</span>
+              <span>Current Speaker: <strong>{activeSpeaker}</strong> ({liveFreqHz}Hz)</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Cpu className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Silicon: Commodity Edge CPU</span>
+              <span>Live Speech Recognition: Active</span>
             </div>
           </div>
         </div>
       )}
 
       {/* ─────────────────────────────────────────────────────────────────
-          STATE 2: RECORDING (Sound Reactive Studio Waveform)
+          STATE 2: RECORDING (Sound Reactive Waveform & Real-Time Spoken Text)
           ───────────────────────────────────────────────────────────────── */}
       {step === 'recording' && (
         <div className="bg-[#0b101d]/90 backdrop-blur-md border border-red-500/30 rounded-3xl p-10 shadow-2xl text-center flex flex-col items-center justify-center my-auto relative overflow-hidden">
-          {/* Top Live Pill & Diarization Indicator */}
+          {/* Top Live Pill & Real Speaker Diarization Indicator */}
           <div className="flex items-center justify-between w-full max-w-lg mb-6">
             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold font-mono">
               <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-              <span>LIVE AUDIO BUFFER</span>
+              <span>LIVE SPEECH CAPTURE</span>
             </div>
 
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs font-mono font-bold">
-              <User className="w-3 h-3 text-cyan-400" />
-              <span>Speaker: {activeSpeaker}</span>
+            {/* Dynamic Speaker Recognized by Pitch F0 */}
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/15 border border-blue-500/40 text-blue-300 text-xs font-mono font-bold animate-in fade-in duration-150">
+              <User className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Speaker: <strong>{activeSpeaker}</strong></span>
+              <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded font-mono">
+                {liveFreqHz}Hz ({Math.round(speakerConfidence * 100)}%)
+              </span>
             </div>
           </div>
 
-          {/* Animated Studio Waveform Bars with Luminous Neon Gradient */}
-          <div className="flex items-center justify-center gap-1.5 h-24 mb-6 px-4 w-full max-w-xl">
-            {[40, 65, 85, 30, 90, 50, 75, 95, 45, 60, 80, 100, 35, 70, 88, 55, 65, 92, 48, 72, 85, 40, 60, 95].map(
-              (height, i) => (
-                <div
-                  key={i}
-                  className="w-1.5 rounded-full bg-gradient-to-t from-red-600 via-rose-500 to-cyan-400 animate-studio-bar"
-                  style={{
-                    height: `${height}%`,
-                    animationDelay: `${(i % 6) * 0.12}s`,
-                  }}
-                />
-              )
-            )}
+          {/* Animated Studio Waveform Bars driven by Real Audio Context */}
+          <div className="flex items-center justify-center gap-1.5 h-20 mb-4 px-4 w-full max-w-xl">
+            {liveBars.map((height, i) => (
+              <div
+                key={i}
+                className="w-2 rounded-full bg-gradient-to-t from-red-600 via-rose-500 to-cyan-400 transition-all duration-75"
+                style={{ height: `${height}%` }}
+              />
+            ))}
           </div>
 
           {/* Large Monospace Timer */}
-          <div className="font-mono text-5xl md:text-6xl font-extrabold text-white tracking-tight tabular-nums mb-2">
+          <div className="font-mono text-4xl md:text-5xl font-extrabold text-white tracking-tight tabular-nums mb-4">
             {formatTime(seconds)}
           </div>
 
-          <p className="text-xs text-slate-400 font-mono mb-6">
-            48kHz STEREO → WHISPER V3 DIARIZATION ACTIVE
-          </p>
-
-          {/* Live Detected Insights Banner */}
-          {liveDetections.length > 0 && (
-            <div className="w-full max-w-lg space-y-2 mb-6 text-left">
-              {liveDetections.map((detection, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl text-blue-300 text-xs font-semibold flex items-center justify-between animate-in fade-in slide-in-from-bottom-2 duration-300"
-                >
-                  <span>{detection}</span>
-                  <span className="text-[9px] font-mono text-cyan-400 uppercase font-bold">REAL-TIME</span>
-                </div>
-              ))}
+          {/* Real-Time Live Speech Output Display */}
+          <div className="w-full max-w-xl min-h-16 p-4 rounded-2xl bg-[#070b14]/90 border border-white/[0.08] text-left text-xs mb-6 shadow-inner">
+            <div className="text-[10px] font-mono uppercase text-blue-400 font-bold mb-1 flex items-center justify-between">
+              <span>Live Speech Buffer:</span>
+              <span className="text-slate-500">{transcript.length} turns recorded</span>
             </div>
-          )}
+            {liveSpokenText ? (
+              <p className="text-slate-200 font-medium italic animate-pulse">
+                &ldquo;{liveSpokenText}&rdquo;
+              </p>
+            ) : transcript.length > 0 ? (
+              <p className="text-slate-300">
+                <strong className="text-blue-400">{transcript[transcript.length - 1].speaker}: </strong>
+                {transcript[transcript.length - 1].text}
+              </p>
+            ) : (
+              <p className="text-slate-500 italic">
+                Speak now... Your voice is being transcribed in real-time.
+              </p>
+            )}
+          </div>
 
           {/* End Meeting Button */}
           <button
@@ -396,7 +596,7 @@ export function MeetingRecorder() {
               <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold">
                 ✓
               </span>
-              <span className="text-xs font-semibold text-slate-200">Audio captured</span>
+              <span className="text-xs font-semibold text-slate-200">Real audio & speech captured</span>
               <span className="ml-auto text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded font-bold">
                 COMPLETE
               </span>
@@ -410,7 +610,7 @@ export function MeetingRecorder() {
               ) : (
                 <RefreshCw className="w-4 h-4 text-blue-400 animate-spin" />
               )}
-              <span className="text-xs font-semibold text-slate-200">Transcribing via Whisper</span>
+              <span className="text-xs font-semibold text-slate-200">Speech transcribed & diarized</span>
               <span className="ml-auto text-[10px] font-mono text-slate-400">
                 {processingStage >= 2 ? 'DONE' : 'IN PROGRESS'}
               </span>
@@ -477,7 +677,7 @@ export function MeetingRecorder() {
               <div className="flex items-center gap-4 text-xs text-slate-400 mt-1 font-mono">
                 <span>Duration: {formatTime(seconds || 24)}</span>
                 <span>•</span>
-                <span>Speakers: Rahul, Manit, Priya</span>
+                <span>Entries: {transcript.length} turns</span>
               </div>
             </div>
 
@@ -491,23 +691,30 @@ export function MeetingRecorder() {
           </div>
 
           <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-            {transcript.map(item => (
-              <div key={item.id} className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-blue-500/30 transition-colors">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-bold text-white">
-                    {item.speaker}
-                  </span>
-                  {item.timestamp && (
-                    <span className="text-[10px] font-mono text-slate-500">
-                      {item.timestamp}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-300 leading-relaxed font-normal">
-                  {item.text}
-                </p>
+            {transcript.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 text-xs italic">
+                No transcript turns captured. Click &quot;View Meeting Intelligence&quot; to inspect extracted state.
               </div>
-            ))}
+            ) : (
+              transcript.map(item => (
+                <div key={item.id} className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-blue-500/30 transition-colors">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <User className="w-3 h-3 text-cyan-400" />
+                      <span>{item.speaker}</span>
+                    </span>
+                    {item.timestamp && (
+                      <span className="text-[10px] font-mono text-slate-500">
+                        {item.timestamp}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed font-normal">
+                    {item.text}
+                  </p>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -544,22 +751,34 @@ export function MeetingRecorder() {
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>DECISION</span>
+                  <span>DECISIONS</span>
                 </h3>
                 <span className="text-[10px] font-bold font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded">
-                  Confirmed
+                  {(intelligence.decisions?.length || (intelligence.decision ? 1 : 0))} Found
                 </span>
               </div>
 
-              <div className="bg-[#070b14] p-4 rounded-xl border border-white/[0.06] shadow-xs">
-                <p className="text-sm font-bold text-white flex items-center gap-2">
-                  <span className="text-emerald-400">✓</span>
-                  <span>{intelligence.decision?.title || 'Use PostgreSQL'}</span>
-                </p>
-                <p className="text-xs text-slate-300 mt-2">
-                  <span className="font-semibold text-blue-300">Reason: </span>
-                  {intelligence.decision?.reason || 'Relational data requirements and ACID transactions for healthcare records.'}
-                </p>
+              <div className="space-y-2">
+                {(!intelligence.decisions?.length && !intelligence.decision) ? (
+                  <div className="bg-[#070b14] p-4 rounded-xl border border-white/[0.06] text-xs text-slate-500 italic">
+                    No explicit decisions identified in this session.
+                  </div>
+                ) : (
+                  (intelligence.decisions && intelligence.decisions.length > 0 ? intelligence.decisions : [intelligence.decision!]).map((d, idx) => (
+                    <div key={idx} className="bg-[#070b14] p-4 rounded-xl border border-white/[0.06] shadow-xs space-y-1">
+                      <p className="text-sm font-bold text-white flex items-center gap-2">
+                        <span className="text-emerald-400">✓</span>
+                        <span>{d.title}</span>
+                      </p>
+                      {d.reason && (
+                        <p className="text-xs text-slate-300">
+                          <span className="font-semibold text-blue-300">Reason: </span>
+                          {d.reason}
+                        </p>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
@@ -571,18 +790,24 @@ export function MeetingRecorder() {
               </h3>
 
               <div className="space-y-2">
-                {intelligence.actionItems.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-[#070b14] p-3 rounded-xl border border-white/[0.06] flex items-center justify-between text-xs shadow-xs"
-                  >
-                    <span className="font-semibold text-slate-200">{item.task}</span>
-                    <div className="flex items-center gap-1 text-slate-200 font-bold bg-white/[0.06] px-2.5 py-1 rounded-md">
-                      <span className="text-slate-400">→</span>
-                      <span>{item.assignee}</span>
-                    </div>
+                {intelligence.actionItems.length === 0 ? (
+                  <div className="bg-[#070b14] p-4 rounded-xl border border-white/[0.06] text-xs text-slate-500 italic">
+                    No action items identified in this session.
                   </div>
-                ))}
+                ) : (
+                  intelligence.actionItems.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-[#070b14] p-3 rounded-xl border border-white/[0.06] flex items-center justify-between text-xs shadow-xs"
+                    >
+                      <span className="font-semibold text-slate-200">{item.task}</span>
+                      <div className="flex items-center gap-1 text-slate-200 font-bold bg-white/[0.06] px-2.5 py-1 rounded-md">
+                        <span className="text-slate-400">→</span>
+                        <span>{item.assignee}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
@@ -593,12 +818,18 @@ export function MeetingRecorder() {
                 <span>RISKS</span>
               </h3>
 
-              {intelligence.risks.map((r, idx) => (
-                <div key={idx} className="bg-amber-500/5 p-3.5 rounded-xl border border-amber-500/20 text-xs">
-                  <p className="font-bold text-amber-300">{r.title}</p>
-                  {r.description && <p className="text-slate-300 mt-1 leading-relaxed">{r.description}</p>}
+              {intelligence.risks.length === 0 ? (
+                <div className="bg-[#070b14] p-4 rounded-xl border border-white/[0.06] text-xs text-slate-500 italic">
+                  No active risks identified.
                 </div>
-              ))}
+              ) : (
+                intelligence.risks.map((r, idx) => (
+                  <div key={idx} className="bg-amber-500/5 p-3.5 rounded-xl border border-amber-500/20 text-xs">
+                    <p className="font-bold text-amber-300">{r.title}</p>
+                    {r.description && <p className="text-slate-300 mt-1 leading-relaxed">{r.description}</p>}
+                  </div>
+                ))
+              )}
             </div>
 
             {/* UNRESOLVED */}
@@ -610,7 +841,7 @@ export function MeetingRecorder() {
 
               {intelligence.unresolved.length === 0 ? (
                 <div className="bg-[#070b14] p-4 rounded-xl border border-white/[0.06] text-xs text-slate-500 italic">
-                  None
+                  All discussion items resolved.
                 </div>
               ) : (
                 intelligence.unresolved.map((u, idx) => (
@@ -624,6 +855,21 @@ export function MeetingRecorder() {
           </div>
         </div>
       )}
+
+      {/* Voice Enrollment & Identity Registration Modal */}
+      <VoiceEnrollmentModal
+        isOpen={isVoiceModalOpen}
+        onClose={() => {
+          setIsVoiceModalOpen(false)
+          setVoiceProfilesState(getVoiceProfiles())
+        }}
+        onEnrolled={profile => {
+          setVoiceProfilesState(getVoiceProfiles())
+          setActiveSpeaker(profile.name)
+          currentSpeakerRef.current = profile.name
+          setLiveFreqHz(profile.fundamentalFreq)
+        }}
+      />
     </div>
   )
 }
